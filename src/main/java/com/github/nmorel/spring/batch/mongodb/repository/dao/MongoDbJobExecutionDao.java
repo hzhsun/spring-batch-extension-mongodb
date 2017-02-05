@@ -1,10 +1,7 @@
 package com.github.nmorel.spring.batch.mongodb.repository.dao;
 
 import com.github.nmorel.spring.batch.mongodb.incrementer.ValueIncrementer;
-import com.mongodb.BasicDBObject;
-import com.mongodb.BasicDBObjectBuilder;
-import com.mongodb.DBCursor;
-import com.mongodb.DBObject;
+import com.mongodb.*;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.batch.core.*;
@@ -74,8 +71,8 @@ public class MongoDbJobExecutionDao extends AbstractMongoDbDao implements JobExe
         super.afterPropertiesSet();
         Assert.notNull(jobExecutionIncrementer, "The jobExecutionIncrementer must not be null.");
 
-        getCollection().ensureIndex(BasicDBObjectBuilder.start().add(JOB_EXECUTION_ID_KEY, 1).add(JOB_INSTANCE_ID_KEY, 1).get());
-        getCollection(PARAM_COLLECTION_NAME).ensureIndex(BasicDBObjectBuilder.start().add(JOB_EXECUTION_ID_KEY, 1).get());
+        getCollection().createIndex(BasicDBObjectBuilder.start().add(JOB_EXECUTION_ID_KEY, 1).add(JOB_INSTANCE_ID_KEY, 1).get());
+        getCollection(PARAM_COLLECTION_NAME).createIndex(BasicDBObjectBuilder.start().add(JOB_EXECUTION_ID_KEY, 1).get());
     }
 
     @Override
@@ -159,14 +156,13 @@ public class MongoDbJobExecutionDao extends AbstractMongoDbDao implements JobExe
 
             DBObject object = toDbObjectWithoutVersion(jobExecution);
             object.put(VERSION_KEY, version);
-            getCollection().update(start()
-                    .add(JOB_EXECUTION_ID_KEY, jobExecution.getId())
-                    .add(VERSION_KEY, jobExecution.getVersion()).get(),
-                    object);
-
-            // Avoid concurrent modifications...
-            DBObject lastError = db.getLastError();
-            if( !((Boolean) lastError.get(UPDATED_EXISTING_STATUS)) )
+            try
+            {
+                getCollection().update(start()
+                                .add(JOB_EXECUTION_ID_KEY, jobExecution.getId())
+                                .add(VERSION_KEY, jobExecution.getVersion()).get(),
+                        object);
+            } catch (MongoWriteConcernException e)
             {
                 DBObject existingJobExecution = getCollection()
                         .findOne(new BasicDBObject(JOB_EXECUTION_ID_KEY, jobExecution.getId()), new BasicDBObject(VERSION_KEY, 1));
@@ -295,7 +291,7 @@ public class MongoDbJobExecutionDao extends AbstractMongoDbDao implements JobExe
         }
         else
         {
-            jobExecution = new JobExecution(jobInstance, id, jobParameters);
+            jobExecution = new JobExecution(jobInstance, id, jobParameters, null);
         }
         jobExecution.setStartTime((Date) dbObject.get(START_TIME_KEY));
         jobExecution.setEndTime((Date) dbObject.get(END_TIME_KEY));

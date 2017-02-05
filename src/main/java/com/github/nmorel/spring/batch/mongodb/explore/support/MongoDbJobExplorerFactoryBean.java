@@ -3,6 +3,7 @@ package com.github.nmorel.spring.batch.mongodb.explore.support;
 import com.github.nmorel.spring.batch.mongodb.incrementer.ValueIncrementer;
 import com.github.nmorel.spring.batch.mongodb.repository.dao.*;
 import com.mongodb.DB;
+import org.springframework.batch.core.explore.JobExplorer;
 import org.springframework.batch.core.explore.support.AbstractJobExplorerFactoryBean;
 import org.springframework.batch.core.explore.support.SimpleJobExplorer;
 import org.springframework.batch.core.repository.ExecutionContextSerializer;
@@ -81,7 +82,7 @@ public class MongoDbJobExplorerFactoryBean extends AbstractJobExplorerFactoryBea
         }
     }
 
-    private Object getTarget() throws Exception
+    private JobExplorer getTarget() throws Exception
     {
         return new SimpleJobExplorer(createJobInstanceDao(),
                 createJobExecutionDao(), createStepExecutionDao(),
@@ -133,7 +134,7 @@ public class MongoDbJobExplorerFactoryBean extends AbstractJobExplorerFactoryBea
     }
 
     @Override
-    public Object getObject() throws Exception
+    public JobExplorer getObject() throws Exception
     {
         return getTarget();
     }

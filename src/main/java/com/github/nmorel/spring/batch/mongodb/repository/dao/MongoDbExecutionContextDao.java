@@ -36,7 +36,7 @@ public class MongoDbExecutionContextDao extends AbstractMongoDbDao implements Ex
     public void afterPropertiesSet() throws Exception
     {
         super.afterPropertiesSet();
-        getCollection().ensureIndex(BasicDBObjectBuilder.start().add(STEP_EXECUTION_ID_KEY, 1).add(JOB_EXECUTION_ID_KEY, 1).get());
+        getCollection().createIndex(BasicDBObjectBuilder.start().add(STEP_EXECUTION_ID_KEY, 1).add(JOB_EXECUTION_ID_KEY, 1).get());
     }
 
     @Override

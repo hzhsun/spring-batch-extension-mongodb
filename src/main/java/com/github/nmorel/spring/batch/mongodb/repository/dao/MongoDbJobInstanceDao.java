@@ -5,12 +5,14 @@ import com.mongodb.BasicDBObject;
 import com.mongodb.DBCursor;
 import com.mongodb.DBObject;
 import org.springframework.batch.core.*;
+import org.springframework.batch.core.launch.NoSuchJobException;
 import org.springframework.batch.core.repository.dao.JobInstanceDao;
 import org.springframework.util.Assert;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.regex.Pattern;
 
 import static com.mongodb.BasicDBObjectBuilder.start;
 
@@ -42,7 +44,7 @@ public class MongoDbJobInstanceDao extends AbstractMongoDbDao implements JobInst
     {
         super.afterPropertiesSet();
         Assert.notNull(jobIncrementer, "The jobIncrementer must not be null.");
-        getCollection().ensureIndex(new BasicDBObject(JOB_INSTANCE_ID_KEY, 1L));
+        getCollection().createIndex(new BasicDBObject(JOB_INSTANCE_ID_KEY, 1L));
     }
 
     @Override
@@ -114,6 +116,19 @@ public class MongoDbJobInstanceDao extends AbstractMongoDbDao implements JobInst
         List results = getCollection().distinct(JOB_NAME_KEY);
         Collections.sort(results);
         return results;
+    }
+
+    @Override
+    public List<JobInstance> findJobInstancesByName(String jobName, int start, int count)
+    {
+        return mapJobInstances(getCollection().find(new BasicDBObject(JOB_NAME_KEY, Pattern.compile(jobName))).sort(new BasicDBObject(JOB_INSTANCE_ID_KEY, -1L))
+                .skip(start).limit(count));
+    }
+
+    @Override
+    public int getJobInstanceCount(String jobName) throws NoSuchJobException
+    {
+        return (int) getCollection().count(new BasicDBObject(JOB_NAME_KEY, jobName));
     }
 
     private List<JobInstance> mapJobInstances( DBCursor dbCursor )

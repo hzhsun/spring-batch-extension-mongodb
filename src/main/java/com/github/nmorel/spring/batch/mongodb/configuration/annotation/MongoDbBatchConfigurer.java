@@ -1,8 +1,10 @@
 package com.github.nmorel.spring.batch.mongodb.configuration.annotation;
 
 import com.github.nmorel.spring.batch.mongodb.repository.support.MongoDbJobRepositoryFactoryBean;
+import com.github.nmorel.spring.batch.mongodb.explore.support.MongoDbJobExplorerFactoryBean;
 import com.mongodb.DB;
 import org.springframework.batch.core.configuration.annotation.BatchConfigurer;
+import org.springframework.batch.core.explore.JobExplorer;
 import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.batch.core.launch.support.SimpleJobLauncher;
 import org.springframework.batch.core.repository.JobRepository;
@@ -23,6 +25,8 @@ public class MongoDbBatchConfigurer implements BatchConfigurer
     private JobRepository jobRepository;
 
     private JobLauncher jobLauncher;
+
+    private JobExplorer jobExplorer;
 
     protected MongoDbBatchConfigurer() {}
 
@@ -54,11 +58,25 @@ public class MongoDbBatchConfigurer implements BatchConfigurer
         return jobLauncher;
     }
 
+    @Override
+    public JobExplorer getJobExplorer()
+    {
+        return jobExplorer;
+    }
+
     @PostConstruct
     public void initialize() throws Exception
     {
         this.jobRepository = createJobRepository();
         this.jobLauncher = createJobLauncher();
+        this.jobExplorer = createJobExplorer();
+    }
+
+    private JobExplorer createJobExplorer() throws Exception
+    {
+        MongoDbJobExplorerFactoryBean jobExplorerFactoryBean = new MongoDbJobExplorerFactoryBean();
+        jobExplorerFactoryBean.setDb(db);
+        return jobExplorerFactoryBean.getObject();
     }
 
     private JobLauncher createJobLauncher() throws Exception
@@ -69,7 +87,7 @@ public class MongoDbBatchConfigurer implements BatchConfigurer
         return jobLauncher;
     }
 
-    protected JobRepository createJobRepository() throws Exception
+    private JobRepository createJobRepository() throws Exception
     {
         MongoDbJobRepositoryFactoryBean factory = new MongoDbJobRepositoryFactoryBean();
         factory.setDb(db);

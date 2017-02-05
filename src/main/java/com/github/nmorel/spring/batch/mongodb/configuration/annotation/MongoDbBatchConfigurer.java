@@ -20,6 +20,8 @@ public class MongoDbBatchConfigurer implements BatchConfigurer
 {
     private DB db;
 
+    private String collectionPrefix;
+
     private PlatformTransactionManager transactionManager = new ResourcelessTransactionManager();
 
     private JobRepository jobRepository;
@@ -35,9 +37,20 @@ public class MongoDbBatchConfigurer implements BatchConfigurer
         setDb(db);
     }
 
+    public MongoDbBatchConfigurer( DB db, String collectionPrefix )
+    {
+        setDb(db);
+        setCollectionPrefix(collectionPrefix);
+    }
+
     public void setDb( DB db )
     {
         this.db = db;
+    }
+
+    public void setCollectionPrefix(String collectionPrefix)
+    {
+        this.collectionPrefix = collectionPrefix;
     }
 
     @Override
@@ -76,6 +89,9 @@ public class MongoDbBatchConfigurer implements BatchConfigurer
     {
         MongoDbJobExplorerFactoryBean jobExplorerFactoryBean = new MongoDbJobExplorerFactoryBean();
         jobExplorerFactoryBean.setDb(db);
+        if (collectionPrefix != null) {
+            jobExplorerFactoryBean.setCollectionPrefix(collectionPrefix);
+        }
         return jobExplorerFactoryBean.getObject();
     }
 
@@ -91,6 +107,9 @@ public class MongoDbBatchConfigurer implements BatchConfigurer
     {
         MongoDbJobRepositoryFactoryBean factory = new MongoDbJobRepositoryFactoryBean();
         factory.setDb(db);
+        if (collectionPrefix != null) {
+            factory.setCollectionPrefix(collectionPrefix);
+        }
         factory.afterPropertiesSet();
         return (JobRepository) factory.getObject();
     }

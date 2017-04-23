@@ -92,6 +92,7 @@ public class MongoDbBatchConfigurer implements BatchConfigurer
         if (collectionPrefix != null) {
             jobExplorerFactoryBean.setCollectionPrefix(collectionPrefix);
         }
+        jobExplorerFactoryBean.afterPropertiesSet();
         return jobExplorerFactoryBean.getObject();
     }
 

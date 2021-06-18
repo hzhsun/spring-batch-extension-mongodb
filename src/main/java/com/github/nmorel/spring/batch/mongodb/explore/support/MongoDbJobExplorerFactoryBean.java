@@ -1,20 +1,29 @@
 package com.github.nmorel.spring.batch.mongodb.explore.support;
 
-import com.github.nmorel.spring.batch.mongodb.incrementer.ValueIncrementer;
-import com.github.nmorel.spring.batch.mongodb.repository.dao.*;
-import com.mongodb.DB;
 import org.springframework.batch.core.explore.JobExplorer;
 import org.springframework.batch.core.explore.support.AbstractJobExplorerFactoryBean;
 import org.springframework.batch.core.explore.support.SimpleJobExplorer;
 import org.springframework.batch.core.repository.ExecutionContextSerializer;
-import org.springframework.batch.core.repository.dao.*;
+import org.springframework.batch.core.repository.dao.ExecutionContextDao;
+import org.springframework.batch.core.repository.dao.Jackson2ExecutionContextStringSerializer;
+import org.springframework.batch.core.repository.dao.JobExecutionDao;
+import org.springframework.batch.core.repository.dao.JobInstanceDao;
+import org.springframework.batch.core.repository.dao.StepExecutionDao;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.util.Assert;
+
+import com.github.nmorel.spring.batch.mongodb.incrementer.ValueIncrementer;
+import com.github.nmorel.spring.batch.mongodb.repository.dao.AbstractMongoDbDao;
+import com.github.nmorel.spring.batch.mongodb.repository.dao.MongoDbExecutionContextDao;
+import com.github.nmorel.spring.batch.mongodb.repository.dao.MongoDbJobExecutionDao;
+import com.github.nmorel.spring.batch.mongodb.repository.dao.MongoDbJobInstanceDao;
+import com.github.nmorel.spring.batch.mongodb.repository.dao.MongoDbStepExecutionDao;
+import com.mongodb.client.MongoDatabase;
 
 /** Implementation of {@link AbstractJobExplorerFactoryBean} */
 public class MongoDbJobExplorerFactoryBean extends AbstractJobExplorerFactoryBean implements InitializingBean
 {
-    private DB db;
+    private MongoDatabase db;
 
     private String collectionPrefix = AbstractMongoDbDao.DEFAULT_COLLECTION_PREFIX;
 
@@ -57,7 +66,7 @@ public class MongoDbJobExplorerFactoryBean extends AbstractJobExplorerFactoryBea
      *
      * @param db a {@link DB}
      */
-    public void setDb( DB db )
+    public void setDb( MongoDatabase db )
     {
         this.db = db;
     }
@@ -75,8 +84,8 @@ public class MongoDbJobExplorerFactoryBean extends AbstractJobExplorerFactoryBea
 
         if( serializer == null )
         {
-            XStreamExecutionContextStringSerializer defaultSerializer = new XStreamExecutionContextStringSerializer();
-            defaultSerializer.afterPropertiesSet();
+            Jackson2ExecutionContextStringSerializer defaultSerializer = new Jackson2ExecutionContextStringSerializer();
+//            defaultSerializer.afterPropertiesSet();
 
             serializer = defaultSerializer;
         }

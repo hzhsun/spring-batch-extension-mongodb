@@ -1,8 +1,5 @@
 package com.github.nmorel.spring.batch.mongodb;
 
-import com.github.nmorel.spring.batch.mongodb.configuration.annotation.MongoDbBatchConfigurer;
-import com.github.nmorel.spring.batch.mongodb.explore.support.MongoDbJobExplorerFactoryBean;
-import com.mongodb.DB;
 import org.springframework.batch.core.configuration.JobRegistry;
 import org.springframework.batch.core.configuration.annotation.BatchConfigurer;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
@@ -16,13 +13,17 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 
+import com.github.nmorel.spring.batch.mongodb.configuration.annotation.MongoDbBatchConfigurer;
+import com.github.nmorel.spring.batch.mongodb.explore.support.MongoDbJobExplorerFactoryBean;
+import com.mongodb.client.MongoDatabase;
+
 @Configuration
 @EnableBatchProcessing
 @Import( {ConfigContext.class} )
 public class TestContext
 {
     @Bean
-    public MongoDbJobExplorerFactoryBean jobExplorerFactoryBean( DB db )
+    public MongoDbJobExplorerFactoryBean jobExplorerFactoryBean( MongoDatabase db )
     {
         MongoDbJobExplorerFactoryBean factory = new MongoDbJobExplorerFactoryBean();
         factory.setDb(db);
@@ -30,7 +31,7 @@ public class TestContext
     }
 
     @Bean
-    public BatchConfigurer batchConfigurer( final DB db )
+    public BatchConfigurer batchConfigurer( final MongoDatabase db )
     {
         return new MongoDbBatchConfigurer(db);
     }

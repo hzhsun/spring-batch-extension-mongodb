@@ -1,8 +1,7 @@
 package com.github.nmorel.spring.batch.mongodb.configuration.annotation;
 
-import com.github.nmorel.spring.batch.mongodb.repository.support.MongoDbJobRepositoryFactoryBean;
-import com.github.nmorel.spring.batch.mongodb.explore.support.MongoDbJobExplorerFactoryBean;
-import com.mongodb.DB;
+import javax.annotation.PostConstruct;
+
 import org.springframework.batch.core.configuration.annotation.BatchConfigurer;
 import org.springframework.batch.core.explore.JobExplorer;
 import org.springframework.batch.core.launch.JobLauncher;
@@ -12,13 +11,15 @@ import org.springframework.batch.support.transaction.ResourcelessTransactionMana
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 
-import javax.annotation.PostConstruct;
+import com.github.nmorel.spring.batch.mongodb.explore.support.MongoDbJobExplorerFactoryBean;
+import com.github.nmorel.spring.batch.mongodb.repository.support.MongoDbJobRepositoryFactoryBean;
+import com.mongodb.client.MongoDatabase;
 
 /** Implementation of {@link BatchConfigurer} for MongoDB */
 @Component
 public class MongoDbBatchConfigurer implements BatchConfigurer
 {
-    private DB db;
+    private MongoDatabase db;
 
     private String collectionPrefix;
 
@@ -32,18 +33,18 @@ public class MongoDbBatchConfigurer implements BatchConfigurer
 
     protected MongoDbBatchConfigurer() {}
 
-    public MongoDbBatchConfigurer( DB db )
+    public MongoDbBatchConfigurer( MongoDatabase db )
     {
         setDb(db);
     }
 
-    public MongoDbBatchConfigurer( DB db, String collectionPrefix )
+    public MongoDbBatchConfigurer( MongoDatabase db, String collectionPrefix )
     {
         setDb(db);
         setCollectionPrefix(collectionPrefix);
     }
 
-    public void setDb( DB db )
+    public void setDb( MongoDatabase db )
     {
         this.db = db;
     }

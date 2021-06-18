@@ -1,22 +1,26 @@
 package com.github.nmorel.spring.batch.mongodb.repository.dao;
 
 
-import com.github.nmorel.spring.batch.mongodb.incrementer.ValueIncrementer;
-import com.mongodb.*;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
-import org.springframework.batch.core.BatchStatus;
-import org.springframework.batch.core.ExitStatus;
-import org.springframework.batch.core.JobExecution;
-import org.springframework.batch.core.StepExecution;
-import org.springframework.batch.core.repository.dao.StepExecutionDao;
-import org.springframework.dao.OptimisticLockingFailureException;
-import org.springframework.util.Assert;
-
 import java.util.Collection;
 import java.util.Date;
 
-import static com.mongodb.BasicDBObjectBuilder.start;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.bson.Document;
+import org.springframework.batch.core.BatchStatus;
+import org.springframework.batch.core.ExitStatus;
+import org.springframework.batch.core.JobExecution;
+import org.springframework.batch.core.JobInstance;
+import org.springframework.batch.core.StepExecution;
+import org.springframework.batch.core.repository.dao.StepExecutionDao;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.util.Assert;
+
+import com.github.nmorel.spring.batch.mongodb.incrementer.ValueIncrementer;
+import com.mongodb.BasicDBObject;
+import com.mongodb.MongoWriteConcernException;
+import com.mongodb.client.MongoCursor;
 
 /** {@link org.springframework.batch.core.repository.dao.StepExecutionDao} implementation for MongoDB */
 public class MongoDbStepExecutionDao extends AbstractMongoDbDao implements StepExecutionDao
@@ -46,7 +50,10 @@ public class MongoDbStepExecutionDao extends AbstractMongoDbDao implements StepE
     private int exitMessageLength = DEFAULT_EXIT_MESSAGE_LENGTH;
 
     private ValueIncrementer stepExecutionIncrementer;
-
+   
+    @Autowired
+    MongoDbJobExecutionDao jobExecutionDAO;
+     
     /**
      * Public setter for the exit message length in database. Do not set this if
      * you haven't modified the schema.
@@ -68,7 +75,8 @@ public class MongoDbStepExecutionDao extends AbstractMongoDbDao implements StepE
     {
         super.afterPropertiesSet();
         Assert.notNull(stepExecutionIncrementer, "StepExecutionIncrementer cannot be null.");
-        getCollection().createIndex(BasicDBObjectBuilder.start().add(STEP_EXECUTION_ID_KEY, 1).add(JOB_EXECUTION_ID_KEY, 1).get());
+        getCollection().createIndex(
+        		start().append(STEP_EXECUTION_ID_KEY, 1).append(JOB_EXECUTION_ID_KEY, 1));
     }
 
     @Override
@@ -80,8 +88,8 @@ public class MongoDbStepExecutionDao extends AbstractMongoDbDao implements StepE
     @Override
     public void saveStepExecution( StepExecution stepExecution )
     {
-        DBObject dbObject = buildStepExecutionParameters(stepExecution);
-        getCollection().save(dbObject);
+        Document dbObject = buildStepExecutionParameters(stepExecution);
+        getCollection().insertOne(dbObject);
     }
 
     @Override
@@ -98,7 +106,7 @@ public class MongoDbStepExecutionDao extends AbstractMongoDbDao implements StepE
         }
     }
 
-    private DBObject buildStepExecutionParameters( StepExecution stepExecution )
+    private Document buildStepExecutionParameters( StepExecution stepExecution )
     {
         Assert.isNull(stepExecution.getId(),
                 "to-be-saved (not updated) StepExecution can't already have an id assigned");
@@ -107,7 +115,7 @@ public class MongoDbStepExecutionDao extends AbstractMongoDbDao implements StepE
         validateStepExecution(stepExecution);
         stepExecution.setId(stepExecutionIncrementer.nextLongValue());
         stepExecution.incrementVersion(); //Should be 0
-        DBObject object = toDbObjectWithoutVersion(stepExecution);
+        Document object = toDbObjectWithoutVersion(stepExecution);
         object.put(VERSION_KEY, stepExecution.getVersion());
         return object;
     }
@@ -139,19 +147,19 @@ public class MongoDbStepExecutionDao extends AbstractMongoDbDao implements StepE
         synchronized(stepExecution)
         {
             Integer version = stepExecution.getVersion() + 1;
-            DBObject object = toDbObjectWithoutVersion(stepExecution);
+            Document object = toDbObjectWithoutVersion(stepExecution);
             object.put(VERSION_KEY, version);
             try
             {
-                getCollection().update(start()
-                                .add(STEP_EXECUTION_ID_KEY, stepExecution.getId())
-                                .add(VERSION_KEY, stepExecution.getVersion()).get(),
+                getCollection().replaceOne(new Document()
+                                .append(STEP_EXECUTION_ID_KEY, stepExecution.getId())
+                                .append(VERSION_KEY, stepExecution.getVersion()),
                         object);
             } catch (MongoWriteConcernException e)
             {
                 // Avoid concurrent modifications...
-                DBObject existingStepExecution = getCollection()
-                        .findOne(new BasicDBObject(STEP_EXECUTION_ID_KEY, stepExecution.getId()), new BasicDBObject(VERSION_KEY, 1));
+            	Document existingStepExecution = getCollection()
+                        .find(new Document(STEP_EXECUTION_ID_KEY, stepExecution.getId())).first();//, new BasicDBObject(VERSION_KEY, 1));
                 if( existingStepExecution == null )
                 {
                     throw new IllegalArgumentException("Can't update this stepExecution, it was never saved.");
@@ -169,19 +177,19 @@ public class MongoDbStepExecutionDao extends AbstractMongoDbDao implements StepE
     @Override
     public StepExecution getStepExecution( JobExecution jobExecution, Long stepExecutionId )
     {
-        return mapStepExecution(getCollection().findOne(BasicDBObjectBuilder.start()
-                .add(STEP_EXECUTION_ID_KEY, stepExecutionId)
-                .add(JOB_EXECUTION_ID_KEY, jobExecution.getId()).get()), jobExecution);
+        return mapStepExecution(getCollection().find(new Document()
+                .append(STEP_EXECUTION_ID_KEY, stepExecutionId)
+                .append(JOB_EXECUTION_ID_KEY, jobExecution.getId())).first(), jobExecution);
     }
 
     @Override
     public void addStepExecutions( JobExecution jobExecution )
     {
-        DBCursor stepsCursor = getCollection().find(new BasicDBObject(JOB_EXECUTION_ID_KEY, jobExecution.getId()))
-                .sort(new BasicDBObject(STEP_EXECUTION_ID_KEY, 1L));
+        MongoCursor<Document> stepsCursor = getCollection().find(new Document(JOB_EXECUTION_ID_KEY, jobExecution.getId()))
+                .sort(new BasicDBObject(STEP_EXECUTION_ID_KEY, 1L)).cursor();
         while( stepsCursor.hasNext() )
         {
-            DBObject stepObject = stepsCursor.next();
+        	Document stepObject = stepsCursor.next();
             mapStepExecution(stepObject, jobExecution);
         }
         stepsCursor.close();
@@ -208,37 +216,39 @@ public class MongoDbStepExecutionDao extends AbstractMongoDbDao implements StepE
         }
     }
 
-    private DBObject toDbObjectWithoutVersion( StepExecution stepExecution )
+    private Document toDbObjectWithoutVersion( StepExecution stepExecution )
     {
         String exitDescription = truncateExitDescription(stepExecution.getExitStatus().getExitDescription());
-        return start()
-                .add(STEP_EXECUTION_ID_KEY, stepExecution.getId())
-                .add(STEP_NAME_KEY, stepExecution.getStepName())
-                .add(JOB_EXECUTION_ID_KEY, stepExecution.getJobExecutionId())
-                .add(START_TIME_KEY, stepExecution.getStartTime())
-                .add(END_TIME_KEY, stepExecution.getEndTime())
-                .add(STATUS_KEY, stepExecution.getStatus().toString())
-                .add(COMMIT_COUNT_KEY, stepExecution.getCommitCount())
-                .add(READ_COUNT_KEY, stepExecution.getReadCount())
-                .add(FILTER_COUT_KEY, stepExecution.getFilterCount())
-                .add(WRITE_COUNT_KEY, stepExecution.getWriteCount())
-                .add(EXIT_CODE_KEY, stepExecution.getExitStatus().getExitCode())
-                .add(EXIT_MESSAGE_KEY, exitDescription)
-                .add(READ_SKIP_COUNT_KEY, stepExecution.getReadSkipCount())
-                .add(WRITE_SKIP_COUNT_KEY, stepExecution.getWriteSkipCount())
-                .add(PROCESS_SKIP_COUT_KEY, stepExecution.getProcessSkipCount())
-                .add(ROLLBACK_COUNT_KEY, stepExecution.getRollbackCount())
-                .add(LAST_UPDATED_KEY, stepExecution.getLastUpdated()).get();
+        return  new Document()
+                .append(STEP_EXECUTION_ID_KEY, stepExecution.getId())
+                .append(STEP_NAME_KEY, stepExecution.getStepName())
+                .append(JOB_EXECUTION_ID_KEY, stepExecution.getJobExecutionId())
+                .append(START_TIME_KEY, stepExecution.getStartTime())
+                .append(END_TIME_KEY, stepExecution.getEndTime())
+                .append(STATUS_KEY, stepExecution.getStatus().toString())
+                .append(COMMIT_COUNT_KEY, stepExecution.getCommitCount())
+                .append(READ_COUNT_KEY, stepExecution.getReadCount())
+                .append(FILTER_COUT_KEY, stepExecution.getFilterCount())
+                .append(WRITE_COUNT_KEY, stepExecution.getWriteCount())
+                .append(EXIT_CODE_KEY, stepExecution.getExitStatus().getExitCode())
+                .append(EXIT_MESSAGE_KEY, exitDescription)
+                .append(READ_SKIP_COUNT_KEY, stepExecution.getReadSkipCount())
+                .append(WRITE_SKIP_COUNT_KEY, stepExecution.getWriteSkipCount())
+                .append(PROCESS_SKIP_COUT_KEY, stepExecution.getProcessSkipCount())
+                .append(ROLLBACK_COUNT_KEY, stepExecution.getRollbackCount())
+                .append(LAST_UPDATED_KEY, stepExecution.getLastUpdated());
     }
 
-    private StepExecution mapStepExecution( DBObject object, JobExecution jobExecution )
+    private StepExecution mapStepExecution( Document object, JobExecution jobExecution )
     {
         if( object == null )
         {
             return null;
         }
 
-        StepExecution stepExecution = new StepExecution((String) object.get(STEP_NAME_KEY), jobExecution, ((Long) object.get(STEP_EXECUTION_ID_KEY)));
+        StepExecution stepExecution = new StepExecution((String) 
+        		object.get(STEP_NAME_KEY), jobExecution,
+        		((Long) object.get(STEP_EXECUTION_ID_KEY)));
         stepExecution.setStartTime((Date) object.get(START_TIME_KEY));
         stepExecution.setEndTime((Date) object.get(END_TIME_KEY));
         stepExecution.setStatus(BatchStatus.valueOf((String) object.get(STATUS_KEY)));
@@ -254,5 +264,35 @@ public class MongoDbStepExecutionDao extends AbstractMongoDbDao implements StepE
         stepExecution.setLastUpdated((Date) object.get(LAST_UPDATED_KEY));
         stepExecution.setVersion((Integer) object.get(VERSION_KEY));
         return stepExecution;
+    }
+    
+    @Override
+	public StepExecution getLastStepExecution(JobInstance jobInstance, String stepName) {
+
+    	StepExecution execution = null;
+    	MongoDbJobExecutionDao jobExecutionDAO = new MongoDbJobExecutionDao();
+    	jobExecutionDAO.setDb(db);
+    	try {
+			jobExecutionDAO.afterPropertiesSet();
+		} catch (Exception e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+    	JobExecution jobExecution = jobExecutionDAO.getLastJobExecution(jobInstance);
+    
+    	if(jobExecution != null) {
+    		Document step = getCollection().find(new Document(JOB_EXECUTION_ID_KEY, jobExecution.getId()).append(STEP_NAME_KEY, stepName)).first();
+
+    		if(step != null) {
+    			execution = mapStepExecution(step, jobExecution); 
+    		}
+    		
+
+    	}
+
+    	return execution;
+    
+    
+    
     }
 }

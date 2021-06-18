@@ -1,18 +1,19 @@
 package example.person;
 
-import com.mongodb.BasicDBObjectBuilder;
-import com.mongodb.DB;
-import com.mongodb.DBCollection;
+import java.util.List;
+
+import org.bson.Document;
 import org.springframework.batch.item.ItemWriter;
 
-import java.util.List;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoDatabase;
 
 /** Simple writer */
 public class PersonWriter implements ItemWriter<Person>
 {
-    private final DB db;
+    private final MongoDatabase db;
 
-    public PersonWriter( DB db )
+    public PersonWriter( MongoDatabase db )
     {
         this.db = db;
     }
@@ -20,10 +21,10 @@ public class PersonWriter implements ItemWriter<Person>
     @Override
     public void write( List<? extends Person> items ) throws Exception
     {
-        DBCollection collection = db.getCollection(Person.class.getSimpleName());
+        MongoCollection<Document> collection = db.getCollection(Person.class.getSimpleName());
         for( Person person : items )
         {
-            collection.save(BasicDBObjectBuilder.start().add("firstName", person.getFirstName()).add("lastName", person.getLastName()).get());
+            collection.insertOne(new Document("firstName", person.getFirstName()).append("lastName", person.getLastName()));
         }
     }
 }

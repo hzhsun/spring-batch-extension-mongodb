@@ -1,21 +1,22 @@
 package com.github.nmorel.spring.batch.mongodb.repository.dao;
 
-import com.mongodb.BasicDBObject;
-import com.mongodb.BasicDBObjectBuilder;
-import com.mongodb.DBObject;
-import org.springframework.batch.core.JobExecution;
-import org.springframework.batch.core.StepExecution;
-import org.springframework.batch.core.repository.ExecutionContextSerializer;
-import org.springframework.batch.core.repository.dao.ExecutionContextDao;
-import org.springframework.batch.item.ExecutionContext;
-import org.springframework.util.Assert;
-
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
+
+import org.bson.Document;
+import org.springframework.batch.core.JobExecution;
+import org.springframework.batch.core.StepExecution;
+import org.springframework.batch.core.repository.ExecutionContextSerializer;
+import org.springframework.batch.core.repository.dao.ExecutionContextDao;
+import org.springframework.batch.item.ExecutionContext;
+import org.springframework.data.mongodb.core.query.Update;
+import org.springframework.util.Assert;
+
+import com.mongodb.client.model.UpdateOptions;
 
 /** {@link org.springframework.batch.core.repository.dao.ExecutionContextDao} implementation for MongoDB */
 public class MongoDbExecutionContextDao extends AbstractMongoDbDao implements ExecutionContextDao
@@ -36,7 +37,7 @@ public class MongoDbExecutionContextDao extends AbstractMongoDbDao implements Ex
     public void afterPropertiesSet() throws Exception
     {
         super.afterPropertiesSet();
-        getCollection().createIndex(BasicDBObjectBuilder.start().add(STEP_EXECUTION_ID_KEY, 1).add(JOB_EXECUTION_ID_KEY, 1).get());
+        getCollection().createIndex(new Document().append(STEP_EXECUTION_ID_KEY, 1).append(JOB_EXECUTION_ID_KEY, 1));
     }
 
     @Override
@@ -55,12 +56,12 @@ public class MongoDbExecutionContextDao extends AbstractMongoDbDao implements Ex
     private ExecutionContext getExecutionContext( String executionIdKey, Long executionId )
     {
         Assert.notNull(executionId, "ExecutionId must not be null.");
-        DBObject result = getCollection().findOne(new BasicDBObject(executionIdKey, executionId));
+        Document result = getCollection().find(new Document(executionIdKey, executionId)).first();
         return deserializeContext(result);
     }
 
     @SuppressWarnings( "unchecked" )
-    private ExecutionContext deserializeContext( DBObject dbObject )
+    private ExecutionContext deserializeContext( Document dbObject )
     {
         ExecutionContext executionContext = new ExecutionContext();
         if( dbObject != null )
@@ -72,7 +73,7 @@ public class MongoDbExecutionContextDao extends AbstractMongoDbDao implements Ex
                 try
                 {
                     ByteArrayInputStream in = new ByteArrayInputStream(value.toString().getBytes("ISO-8859-1"));
-                    map = (Map<String, Object>) serializer.deserialize(in);
+                    map = serializer.deserialize(in);
                 }
                 catch( IOException ioe )
                 {
@@ -125,10 +126,8 @@ public class MongoDbExecutionContextDao extends AbstractMongoDbDao implements Ex
         Assert.notNull(executionId, "ExecutionId must not be null.");
         Assert.notNull(executionContext, "The ExecutionContext must not be null.");
 
-        DBObject dbObject = new BasicDBObject(executionIdKey, executionId);
-        dbObject.put(SERIALIZED_CONTEXT_KEY, serializeContext(executionContext));
-
-        getCollection().update(new BasicDBObject(executionIdKey, executionId), dbObject, true, false);
+        Document update = new Update().set(executionIdKey, executionId).set(SERIALIZED_CONTEXT_KEY, serializeContext(executionContext)).getUpdateObject();
+        getCollection().updateOne(new Document(executionIdKey, executionId), update, new UpdateOptions().upsert(true));//, true, false);
     }
 
     @SuppressWarnings( "unchecked" )

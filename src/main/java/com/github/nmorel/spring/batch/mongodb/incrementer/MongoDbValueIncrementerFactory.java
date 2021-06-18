@@ -1,7 +1,8 @@
 package com.github.nmorel.spring.batch.mongodb.incrementer;
 
-import com.mongodb.DB;
 import org.springframework.util.Assert;
+
+import com.mongodb.client.MongoDatabase;
 
 /**
  * MongoDB implementation of the {@link ValueIncrementerFactory}
@@ -10,9 +11,9 @@ import org.springframework.util.Assert;
 public class MongoDbValueIncrementerFactory implements ValueIncrementerFactory
 {
     /** The MongoDB database */
-    private DB db;
+    private MongoDatabase db;
 
-    public MongoDbValueIncrementerFactory( DB db )
+    public MongoDbValueIncrementerFactory( MongoDatabase db )
     {
         Assert.notNull(db, "db must not be null");
         this.db = db;

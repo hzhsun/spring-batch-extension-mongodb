@@ -1,7 +1,6 @@
 package example.person;
 
-import com.mongodb.DB;
-import org.springframework.batch.core.Job;
+ import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
 import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
@@ -16,6 +15,8 @@ import org.springframework.batch.item.file.transform.DelimitedLineTokenizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ClassPathResource;
+
+import com.mongodb.client.MongoDatabase;
 
 @Configuration
 public class PersonContext
@@ -46,30 +47,30 @@ public class PersonContext
     }
 
     @Bean
-    ItemWriter<Person> itemWriter( DB db )
+    ItemWriter<Person> itemWriter( MongoDatabase db )
     {
         return new PersonWriter(db);
     }
 
     @Bean
-    public Job personJob( JobBuilderFactory jobs, Step s1 )
+    public Job personJob( JobBuilderFactory jobs, Step step1 )
     {
         return jobs.get("personJob")
                 .incrementer(new RunIdIncrementer())
-                .flow(s1)
+                .flow(step1)
                 .end()
                 .build();
     }
 
     @Bean
-    public Step step1( StepBuilderFactory stepBuilderFactory, ItemReader<Person> reader,
-                       ItemWriter<Person> writer, ItemProcessor<Person, Person> processor )
+    public Step step1( StepBuilderFactory stepBuilderFactory, ItemReader<Person> itemReader,
+                       ItemWriter<Person> itemWriter, ItemProcessor<Person, Person> itemProcess )
     {
         return stepBuilderFactory.get("step1")
                 .<Person, Person>chunk(10)
-                .reader(reader)
-                .processor(processor)
-                .writer(writer)
+                .reader(itemReader)
+                .processor(itemProcess)
+                .writer(itemWriter)
                 .build();
     }
 

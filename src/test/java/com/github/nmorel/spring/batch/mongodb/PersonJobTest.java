@@ -1,12 +1,17 @@
 package com.github.nmorel.spring.batch.mongodb;
 
-import com.mongodb.DB;
-import example.person.PersonContext;
+import static org.junit.Assert.assertEquals;
+
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.springframework.batch.core.*;
+import org.springframework.batch.core.BatchStatus;
+import org.springframework.batch.core.Job;
+import org.springframework.batch.core.JobExecution;
+import org.springframework.batch.core.JobParameters;
+import org.springframework.batch.core.JobParametersInvalidException;
+import org.springframework.batch.core.StepExecution;
 import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.batch.core.repository.JobExecutionAlreadyRunningException;
 import org.springframework.batch.core.repository.JobInstanceAlreadyCompleteException;
@@ -16,7 +21,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
-import static org.junit.Assert.assertEquals;
+import com.mongodb.client.MongoDatabase;
+
+import example.person.PersonContext;
 
 @RunWith( SpringJUnit4ClassRunner.class )
 @ContextConfiguration( classes = {TestContext.class, PersonContext.class} )
@@ -24,13 +31,13 @@ public class PersonJobTest
 {
 
     @Autowired
-    private Job job;
+    private Job personJob;
 
     @Autowired
     private JobLauncher jobLauncher;
 
     @Autowired
-    private DB db;
+    private MongoDatabase db;
 
     @Autowired
     private JobRepository repository;
@@ -38,23 +45,23 @@ public class PersonJobTest
     @Before
     public void onSetUpInTransaction() throws Exception
     {
-        db.dropDatabase();
+        db.drop();
     }
 
     @After
     public void tearDown()
     {
-        db.dropDatabase();
+        db.drop();
     }
 
     @Test
     public void testPersonJob()
             throws JobParametersInvalidException, JobExecutionAlreadyRunningException, JobRestartException, JobInstanceAlreadyCompleteException
     {
-        JobExecution jobExecution = jobLauncher.run(job, new JobParameters());
+        JobExecution jobExecution = jobLauncher.run(personJob, new JobParameters());
         assertEquals("Batch status not COMPLETED", BatchStatus.COMPLETED, jobExecution.getStatus());
 
-        JobExecution lastJobExecution = repository.getLastJobExecution(job.getName(), new JobParameters());
+        JobExecution lastJobExecution = repository.getLastJobExecution(personJob.getName(), new JobParameters());
         assertEquals("Last job execution not equals to the job execution returned", jobExecution.getId(), lastJobExecution.getId());
 
         assertEquals("The step didn't run once", 1, repository.getStepExecutionCount(jobExecution.getJobInstance(), "step1"));

@@ -1,15 +1,16 @@
 package com.github.nmorel.spring.batch.mongodb;
 
-import com.mongodb.DB;
-import com.mongodb.MongoClient;
+import java.net.UnknownHostException;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.config.PropertyPlaceholderConfigurer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.PropertySource;
 import org.springframework.core.env.Environment;
+import org.springframework.data.mongodb.core.SimpleMongoClientDatabaseFactory;
 
-import java.net.UnknownHostException;
+import com.mongodb.client.MongoDatabase;
 
 @Configuration
 @PropertySource( "classpath:batch.properties" )
@@ -26,10 +27,10 @@ public class ConfigContext
     }
 
     @Bean
-    DB database() throws UnknownHostException
+    MongoDatabase database() throws UnknownHostException
     {
-        MongoClient client = new MongoClient(env.getProperty("mongodb.host"), env.getProperty("mongodb.port", int.class));
-        return client.getDB(env.getProperty("mongodb.name"));
+        return new SimpleMongoClientDatabaseFactory("mongodb://localhost:27017/test").getMongoDatabase("test");
+//        return client.getDatabase(env.getProperty("mongodb.name"));
     }
 
 }

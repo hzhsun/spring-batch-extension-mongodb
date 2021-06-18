@@ -1,18 +1,31 @@
 package com.github.nmorel.spring.batch.mongodb.repository.dao;
 
-import com.github.nmorel.spring.batch.mongodb.incrementer.ValueIncrementer;
-import com.mongodb.*;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.springframework.batch.core.*;
+import org.bson.Document;
+import org.springframework.batch.core.BatchStatus;
+import org.springframework.batch.core.ExitStatus;
+import org.springframework.batch.core.JobExecution;
+import org.springframework.batch.core.JobInstance;
+import org.springframework.batch.core.JobParameter;
+import org.springframework.batch.core.JobParameters;
 import org.springframework.batch.core.repository.dao.JobExecutionDao;
 import org.springframework.batch.core.repository.dao.NoSuchObjectException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.util.Assert;
 
-import java.util.*;
-
-import static com.mongodb.BasicDBObjectBuilder.start;
+import com.github.nmorel.spring.batch.mongodb.incrementer.ValueIncrementer;
+import com.mongodb.BasicDBObject;
+import com.mongodb.MongoWriteConcernException;
+import com.mongodb.client.MongoCursor;
 
 /** {@link org.springframework.batch.core.repository.dao.JobExecutionDao} implementation for MongoDB */
 public class MongoDbJobExecutionDao extends AbstractMongoDbDao implements JobExecutionDao
@@ -71,8 +84,8 @@ public class MongoDbJobExecutionDao extends AbstractMongoDbDao implements JobExe
         super.afterPropertiesSet();
         Assert.notNull(jobExecutionIncrementer, "The jobExecutionIncrementer must not be null.");
 
-        getCollection().createIndex(BasicDBObjectBuilder.start().add(JOB_EXECUTION_ID_KEY, 1).add(JOB_INSTANCE_ID_KEY, 1).get());
-        getCollection(PARAM_COLLECTION_NAME).createIndex(BasicDBObjectBuilder.start().add(JOB_EXECUTION_ID_KEY, 1).get());
+        getCollection().createIndex(new Document().append(JOB_EXECUTION_ID_KEY, 1).append(JOB_INSTANCE_ID_KEY, 1));
+        getCollection(PARAM_COLLECTION_NAME).createIndex(new Document(JOB_EXECUTION_ID_KEY, 1));
     }
 
     @Override
@@ -106,7 +119,7 @@ public class MongoDbJobExecutionDao extends AbstractMongoDbDao implements JobExe
         Assert.notNull(jobExecution.getCreateTime(), "JobExecution create time cannot be null");
     }
 
-    private DBObject toDbObjectWithoutVersion( JobExecution jobExecution )
+    private Document toDbObjectWithoutVersion( JobExecution jobExecution )
     {
         String exitDescription = jobExecution.getExitStatus().getExitDescription();
         if( exitDescription != null && exitDescription.length() > exitMessageLength )
@@ -114,24 +127,24 @@ public class MongoDbJobExecutionDao extends AbstractMongoDbDao implements JobExe
             exitDescription = exitDescription.substring(0, exitMessageLength);
             logger.debug("Truncating long message before update of JobExecution: " + jobExecution);
         }
-        return start()
-                .add(JOB_EXECUTION_ID_KEY, jobExecution.getId())
-                .add(JOB_INSTANCE_ID_KEY, jobExecution.getJobId())
-                .add(START_TIME_KEY, jobExecution.getStartTime())
-                .add(END_TIME_KEY, jobExecution.getEndTime())
-                .add(STATUS_KEY, jobExecution.getStatus().toString())
-                .add(EXIT_CODE_KEY, jobExecution.getExitStatus().getExitCode())
-                .add(EXIT_MESSAGE_KEY, exitDescription)
-                .add(CREATE_TIME_KEY, jobExecution.getCreateTime())
-                .add(LAST_UPDATED_KEY, jobExecution.getLastUpdated()).get();
+        return new Document()
+                .append(JOB_EXECUTION_ID_KEY, jobExecution.getId())
+                .append(JOB_INSTANCE_ID_KEY, jobExecution.getJobId())
+                .append(START_TIME_KEY, jobExecution.getStartTime())
+                .append(END_TIME_KEY, jobExecution.getEndTime())
+                .append(STATUS_KEY, jobExecution.getStatus().toString())
+                .append(EXIT_CODE_KEY, jobExecution.getExitStatus().getExitCode())
+                .append(EXIT_MESSAGE_KEY, exitDescription)
+                .append(CREATE_TIME_KEY, jobExecution.getCreateTime())
+                .append(LAST_UPDATED_KEY, jobExecution.getLastUpdated());
     }
 
     private void save( JobExecution jobExecution, Long id )
     {
         jobExecution.setId(id);
-        DBObject object = toDbObjectWithoutVersion(jobExecution);
+        Document object = toDbObjectWithoutVersion(jobExecution);
         object.put(VERSION_KEY, jobExecution.getVersion());
-        getCollection().save(object);
+        getCollection().insertOne(object);
     }
 
     @Override
@@ -149,23 +162,24 @@ public class MongoDbJobExecutionDao extends AbstractMongoDbDao implements JobExe
         {
             Integer version = jobExecution.getVersion() + 1;
 
-            if( getCollection().findOne(new BasicDBObject(JOB_EXECUTION_ID_KEY, jobExecution.getId())) == null )
+            if( getCollection().find(new BasicDBObject(JOB_EXECUTION_ID_KEY, jobExecution.getId())).first() == null )
             {
                 throw new NoSuchObjectException("Invalid JobExecution, ID " + jobExecution.getId() + " not found.");
             }
 
-            DBObject object = toDbObjectWithoutVersion(jobExecution);
+            Document object = toDbObjectWithoutVersion(jobExecution);
             object.put(VERSION_KEY, version);
             try
             {
-                getCollection().update(start()
-                                .add(JOB_EXECUTION_ID_KEY, jobExecution.getId())
-                                .add(VERSION_KEY, jobExecution.getVersion()).get(),
+                getCollection().replaceOne(start()
+                                .append(JOB_EXECUTION_ID_KEY, jobExecution.getId())
+                                .append(VERSION_KEY, jobExecution.getVersion()),
                         object);
             } catch (MongoWriteConcernException e)
             {
-                DBObject existingJobExecution = getCollection()
-                        .findOne(new BasicDBObject(JOB_EXECUTION_ID_KEY, jobExecution.getId()), new BasicDBObject(VERSION_KEY, 1));
+            	Document existingJobExecution = getCollection()
+
+                        .find(new Document(JOB_EXECUTION_ID_KEY, jobExecution.getId())).first();
                 if( existingJobExecution == null )
                 {
                     throw new IllegalArgumentException("Can't update this jobExecution, it was never saved.");
@@ -186,12 +200,12 @@ public class MongoDbJobExecutionDao extends AbstractMongoDbDao implements JobExe
         Assert.notNull(jobInstance, "Job cannot be null.");
         Assert.notNull(jobInstance.getId(), "Job Id cannot be null.");
 
-        DBCursor dbCursor = getCollection().find(new BasicDBObject(JOB_INSTANCE_ID_KEY, jobInstance
-                .getId())).sort(new BasicDBObject(JOB_EXECUTION_ID_KEY, -1));
+        MongoCursor<Document> dbCursor = getCollection().find(new BasicDBObject(JOB_INSTANCE_ID_KEY, jobInstance
+                .getId())).sort(new BasicDBObject(JOB_EXECUTION_ID_KEY, -1)).cursor();
         List<JobExecution> result = new ArrayList<JobExecution>();
         while( dbCursor.hasNext() )
         {
-            DBObject dbObject = dbCursor.next();
+        	Document dbObject = dbCursor.next();
             result.add(mapJobExecution(jobInstance, dbObject));
         }
         dbCursor.close();
@@ -203,7 +217,7 @@ public class MongoDbJobExecutionDao extends AbstractMongoDbDao implements JobExe
     {
         Long id = jobInstance.getId();
 
-        DBCursor dbCursor = getCollection().find(new BasicDBObject(JOB_INSTANCE_ID_KEY, id)).sort(new BasicDBObject(CREATE_TIME_KEY, -1)).limit(1);
+        MongoCursor<Document>  dbCursor = getCollection().find(new BasicDBObject(JOB_INSTANCE_ID_KEY, id)).sort(new BasicDBObject(CREATE_TIME_KEY, -1)).limit(1).cursor();
         if( !dbCursor.hasNext() )
         {
             dbCursor.close();
@@ -211,7 +225,7 @@ public class MongoDbJobExecutionDao extends AbstractMongoDbDao implements JobExe
         }
         else
         {
-            DBObject singleResult = dbCursor.next();
+        	Document singleResult = dbCursor.next();
             if( dbCursor.hasNext() )
             {
                 throw new IllegalStateException("There must be at most one latest job execution");
@@ -224,8 +238,8 @@ public class MongoDbJobExecutionDao extends AbstractMongoDbDao implements JobExe
     @Override
     public Set<JobExecution> findRunningJobExecutions( String jobName )
     {
-        DBCursor instancesCursor = getCollection(MongoDbJobInstanceDao.COLLECTION_NAME)
-                .find(new BasicDBObject(JOB_NAME_KEY, jobName), new BasicDBObject(JOB_INSTANCE_ID_KEY, 1L));
+    	MongoCursor<Document> instancesCursor = getCollection(MongoDbJobInstanceDao.COLLECTION_NAME)
+                .find(new BasicDBObject(JOB_NAME_KEY, jobName)).cursor();
         List<Long> ids = new ArrayList<Long>();
         while( instancesCursor.hasNext() )
         {
@@ -233,9 +247,9 @@ public class MongoDbJobExecutionDao extends AbstractMongoDbDao implements JobExe
         }
         instancesCursor.close();
 
-        DBCursor dbCursor = getCollection().find(BasicDBObjectBuilder.start()
-                .add(JOB_INSTANCE_ID_KEY, new BasicDBObject("$in", ids.toArray()))
-                .add(END_TIME_KEY, null).get()).sort(new BasicDBObject(JOB_EXECUTION_ID_KEY, -1L));
+        MongoCursor<Document> dbCursor = getCollection().find(start()
+                .append(JOB_INSTANCE_ID_KEY, new BasicDBObject("$in", ids.toArray()))
+                .append(END_TIME_KEY, null)).sort(new BasicDBObject(JOB_EXECUTION_ID_KEY, -1L)).cursor();
         Set<JobExecution> result = new HashSet<JobExecution>();
         while( dbCursor.hasNext() )
         {
@@ -248,21 +262,21 @@ public class MongoDbJobExecutionDao extends AbstractMongoDbDao implements JobExe
     @Override
     public JobExecution getJobExecution( Long executionId )
     {
-        return mapJobExecution(getCollection().findOne(new BasicDBObject(JOB_EXECUTION_ID_KEY, executionId)));
+        return mapJobExecution(getCollection().find(new BasicDBObject(JOB_EXECUTION_ID_KEY, executionId)).first());
     }
 
     @Override
     public void synchronizeStatus( JobExecution jobExecution )
     {
         Long id = jobExecution.getId();
-        DBObject jobExecutionObject = getCollection().findOne(new BasicDBObject(JOB_EXECUTION_ID_KEY, id), start().add(VERSION_KEY, 1L).get());
+        Document jobExecutionObject = getCollection().find(new BasicDBObject(JOB_EXECUTION_ID_KEY, id)).first();
         int currentVersion = jobExecutionObject != null ? ((Integer) jobExecutionObject.get(VERSION_KEY)) : 0;
         if( currentVersion != jobExecution.getVersion() )
         {
             if( jobExecutionObject == null )
             {
                 save(jobExecution, id);
-                jobExecutionObject = getCollection().findOne(new BasicDBObject(JOB_EXECUTION_ID_KEY, id), start().add(STATUS_KEY, 1L).get());
+                jobExecutionObject = getCollection().find(new BasicDBObject(JOB_EXECUTION_ID_KEY, id)).first();
             }
             String status = (String) jobExecutionObject.get(STATUS_KEY);
             jobExecution.upgradeStatus(BatchStatus.valueOf(status));
@@ -270,12 +284,12 @@ public class MongoDbJobExecutionDao extends AbstractMongoDbDao implements JobExe
         }
     }
 
-    private JobExecution mapJobExecution( DBObject dbObject )
+    private JobExecution mapJobExecution( Document dbObject )
     {
         return mapJobExecution(null, dbObject);
     }
 
-    private JobExecution mapJobExecution( JobInstance jobInstance, DBObject dbObject )
+    private JobExecution mapJobExecution( JobInstance jobInstance, Document dbObject )
     {
         if( dbObject == null )
         {
@@ -325,27 +339,27 @@ public class MongoDbJobExecutionDao extends AbstractMongoDbDao implements JobExe
     private void insertParameter( Long executionId, JobParameter.ParameterType type, String key,
                                   Object value, boolean identifying )
     {
-        BasicDBObjectBuilder builder = start().add(JOB_EXECUTION_ID_KEY, executionId).add(PARAM_KEY_NAME_KEY, key).add(PARAM_TYPE_KEY, type.name())
-                .add(PARAM_IDENTIFYING_KEY, identifying ? "Y" : "N");
+        Document builder = start().append(JOB_EXECUTION_ID_KEY, executionId).append(PARAM_KEY_NAME_KEY, key).append(PARAM_TYPE_KEY, type.name())
+                .append(PARAM_IDENTIFYING_KEY, identifying ? "Y" : "N");
 
         if( type == JobParameter.ParameterType.STRING )
         {
-            builder.add(PARAM_STRING_VAL_KEY, value);
+            builder.append(PARAM_STRING_VAL_KEY, value);
         }
         else if( type == JobParameter.ParameterType.LONG )
         {
-            builder.add(PARAM_LONG_VAL_KEY, value);
+            builder.append(PARAM_LONG_VAL_KEY, value);
         }
         else if( type == JobParameter.ParameterType.DOUBLE )
         {
-            builder.add(PARAM_DOUBLE_VAL_KEY, value);
+            builder.append(PARAM_DOUBLE_VAL_KEY, value);
         }
         else if( type == JobParameter.ParameterType.DATE )
         {
-            builder.add(PARAM_DATE_VAL_KEY, value);
+            builder.append(PARAM_DATE_VAL_KEY, value);
         }
 
-        getCollection(PARAM_COLLECTION_NAME).save(builder.get());
+        getCollection(PARAM_COLLECTION_NAME).insertOne(builder);
     }
 
     /**
@@ -354,13 +368,13 @@ public class MongoDbJobExecutionDao extends AbstractMongoDbDao implements JobExe
      */
     private JobParameters getJobParameters( Long executionId )
     {
-        DBCursor cursor = getCollection(PARAM_COLLECTION_NAME).find(new BasicDBObject(JOB_EXECUTION_ID_KEY, executionId));
+    	MongoCursor<Document> cursor = getCollection(PARAM_COLLECTION_NAME).find(new BasicDBObject(JOB_EXECUTION_ID_KEY, executionId)).cursor();
 
         final Map<String, JobParameter> map = new HashMap<String, JobParameter>();
 
         while( cursor.hasNext() )
         {
-            DBObject dbObject = cursor.next();
+        	Document dbObject = cursor.next();
             JobParameter.ParameterType type = JobParameter.ParameterType.valueOf((String) dbObject.get(PARAM_TYPE_KEY));
             JobParameter value = null;
 

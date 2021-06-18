@@ -1,9 +1,11 @@
 package com.github.nmorel.spring.batch.mongodb.repository.dao;
 
-import com.mongodb.DB;
-import com.mongodb.DBCollection;
+import org.bson.Document;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.util.Assert;
+
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoDatabase;
 
 /** Base class for all MongoDB DAO implementation */
 public abstract class AbstractMongoDbDao implements InitializingBean
@@ -36,11 +38,11 @@ public abstract class AbstractMongoDbDao implements InitializingBean
 
     protected static final String JOB_NAME_KEY = "jobName";
 
-    protected DB db;
+    protected MongoDatabase db;
 
     protected String prefix = DEFAULT_COLLECTION_PREFIX;
 
-    public void setDb( DB db )
+    public void setDb( MongoDatabase db )
     {
         this.db = db;
     }
@@ -50,12 +52,12 @@ public abstract class AbstractMongoDbDao implements InitializingBean
         this.prefix = prefix;
     }
 
-    protected DBCollection getCollection()
+    protected MongoCollection<Document> getCollection()
     {
         return getCollection(getCollectionName());
     }
 
-    protected DBCollection getCollection( String collectionName )
+    protected MongoCollection<Document> getCollection( String collectionName )
     {
         return db.getCollection(prefix + collectionName);
     }
@@ -67,4 +69,9 @@ public abstract class AbstractMongoDbDao implements InitializingBean
     {
         Assert.notNull(db, "The db must not be null.");
     }
+    
+    public Document start(){
+    	return new Document();
+    }
+    
 }

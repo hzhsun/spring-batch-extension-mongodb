@@ -1,17 +1,19 @@
 package com.github.nmorel.spring.batch.mongodb.incrementer;
 
-import com.mongodb.BasicDBObject;
-import com.mongodb.DB;
-import com.mongodb.DBCollection;
+import org.bson.Document;
 import org.springframework.beans.factory.InitializingBean;
-import org.springframework.dao.DataAccessException;
 import org.springframework.util.Assert;
+
+import com.mongodb.BasicDBObject;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.FindOneAndUpdateOptions;
 
 /** Implementation of {@link ValueIncrementer} that uses MongoDB. */
 public class MongoDbValueIncrementer implements ValueIncrementer, InitializingBean
 {
     /** The MongoDB database */
-    private DB db;
+    private MongoDatabase db;
 
     /** The name of the sequence/table containing the sequence */
     private String incrementerName;
@@ -23,7 +25,7 @@ public class MongoDbValueIncrementer implements ValueIncrementer, InitializingBe
     {
     }
 
-    public MongoDbValueIncrementer( DB db, String incrementerName )
+    public MongoDbValueIncrementer( MongoDatabase db, String incrementerName )
     {
         this.db = db;
         this.incrementerName = incrementerName;
@@ -36,12 +38,12 @@ public class MongoDbValueIncrementer implements ValueIncrementer, InitializingBe
         Assert.notNull(incrementerName, "Property 'incrementerName' is required");
     }
 
-    public DB getDb()
+    public MongoDatabase getDb()
     {
         return db;
     }
 
-    public void setDb( DB db )
+    public void setDb( MongoDatabase db )
     {
         this.db = db;
     }
@@ -67,19 +69,19 @@ public class MongoDbValueIncrementer implements ValueIncrementer, InitializingBe
     }
 
     @Override
-    public int nextIntValue() throws DataAccessException
+	public int nextIntValue()  
     {
         return (int) getNextKey();
     }
 
     @Override
-    public long nextLongValue() throws DataAccessException
+    public long nextLongValue()  
     {
         return getNextKey();
     }
 
     @Override
-    public String nextStringValue() throws DataAccessException
+    public String nextStringValue()  
     {
         String s = Long.toString(getNextKey());
         int len = s.length();
@@ -104,9 +106,11 @@ public class MongoDbValueIncrementer implements ValueIncrementer, InitializingBe
      */
     protected long getNextKey()
     {
-        DBCollection collection = db.getCollection(incrementerName);
+        MongoCollection<Document> collection = db.getCollection(incrementerName);
         BasicDBObject sequence = new BasicDBObject();
-        collection.update(sequence, new BasicDBObject("$inc", new BasicDBObject("value", 1L)), true, false);
-        return (Long) collection.findOne(sequence).get("value");
+        collection.findOneAndUpdate(sequence, new Document("$inc", new BasicDBObject("value", 1L)),
+        		new FindOneAndUpdateOptions().upsert(true)
+        		);
+        return (Long) collection.find(sequence).first().get("value"); 
     }
 }

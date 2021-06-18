@@ -1,6 +1,18 @@
 package com.github.nmorel.spring.batch.mongodb;
 
-import com.mongodb.DB;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
+import java.io.Serializable;
+import java.sql.Timestamp;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.junit.After;
@@ -16,14 +28,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
-import java.io.Serializable;
-import java.sql.Timestamp;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-
-import static org.junit.Assert.*;
+import com.mongodb.client.MongoDatabase;
 
 @RunWith( SpringJUnit4ClassRunner.class )
 @ContextConfiguration( classes = {TestContext.class} )
@@ -42,9 +47,10 @@ public class MongoDbJobRepositoryTest
 
     @Autowired
     private JobRepository repository;
+    
 
     @Autowired
-    private DB db;
+    private MongoDatabase db;
 
     @Before
     public void onSetUpInTransaction() throws Exception
@@ -52,13 +58,13 @@ public class MongoDbJobRepositoryTest
         job = new JobSupport("test-job");
         job.setRestartable(true);
 
-        db.dropDatabase();
+//        db.drop();
     }
 
     @After
     public void tearDown()
     {
-        db.dropDatabase();
+        db.drop();
     }
 
     @Test
@@ -67,7 +73,9 @@ public class MongoDbJobRepositoryTest
         job.setName("foo");
         int before = 0;
         JobExecution execution = repository.createJobExecution(job.getName(), new JobParameters());
-        int after = (int) db.getCollection("BatchJobInstance").count();
+        execution.setStartTime(new Date());
+        repository.update(execution);
+        int after = (int) db.getCollection("BatchJobInstance").countDocuments();
         assertEquals(before + 1, after);
         assertNotNull(execution.getId());
 
@@ -79,7 +87,7 @@ public class MongoDbJobRepositoryTest
         catch( JobExecutionAlreadyRunningException e )
         {
         }
-        after = (int) db.getCollection("BatchJobInstance").count();
+        after = (int) db.getCollection("BatchJobInstance").countDocuments();
         assertEquals(before + 1, after);
         assertNotNull(execution.getId());
     }
@@ -92,7 +100,7 @@ public class MongoDbJobRepositoryTest
         JobExecution execution = repository.createJobExecution(job.getName(), new JobParameters());
         execution.getExecutionContext().put("foo", "bar");
         repository.updateExecutionContext(execution);
-        int after = (int) db.getCollection("BatchJobExecution").count();
+        int after = (int) db.getCollection("BatchJobExecution").countDocuments();
         assertEquals(before + 1, after);
         assertNotNull(execution.getId());
         JobExecution last = repository.getLastJobExecution(job.getName(), new JobParameters());
@@ -125,7 +133,7 @@ public class MongoDbJobRepositoryTest
 
         assertNotNull(execution);
 
-        int after = (int) db.getCollection("BatchJobInstance").count();
+        int after = (int) db.getCollection("BatchJobInstance").countDocuments();
         assertNotNull(execution.getId());
         assertEquals(before + 1, after);
 
@@ -142,12 +150,12 @@ public class MongoDbJobRepositoryTest
         job.setName("spam");
 
         JobExecution execution = repository.createJobExecution(job.getName(), new JobParameters());
-        cacheJobIds(execution);
+        cacheJobIds(execution);        
         execution.setEndTime(new Timestamp(System.currentTimeMillis()));
         repository.update(execution);
         execution.setStatus(BatchStatus.FAILED);
 
-        int before = (int) db.getCollection("BatchJobInstance").count();
+        int before = (int) db.getCollection("BatchJobInstance").countDocuments();
         assertEquals(1, before);
 
         long t0 = System.currentTimeMillis();
@@ -162,7 +170,7 @@ public class MongoDbJobRepositoryTest
         }
         long t1 = System.currentTimeMillis();
 
-        int after = (int) db.getCollection("BatchJobInstance").count();
+        int after = (int) db.getCollection("BatchJobInstance").countDocuments();
         assertNotNull(execution.getId());
         assertEquals(before, after);
 
@@ -184,12 +192,15 @@ public class MongoDbJobRepositoryTest
     {
         new Thread(new Runnable()
         {
-            public void run()
+            @Override
+			public void run()
             {
 
                 try
                 {
                     JobExecution execution = repository.createJobExecution(job.getName(), new JobParameters());
+                    execution.setStartTime(new Date());
+                    repository.update(execution);
                     cacheJobIds(execution);
                     list.add(execution);
                     Thread.sleep(1000);

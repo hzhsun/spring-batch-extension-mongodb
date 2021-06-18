@@ -1,20 +1,23 @@
 package com.github.nmorel.spring.batch.mongodb.repository.dao;
 
-import com.github.nmorel.spring.batch.mongodb.incrementer.ValueIncrementer;
-import com.mongodb.BasicDBObject;
-import com.mongodb.DBCursor;
-import com.mongodb.DBObject;
-import org.springframework.batch.core.*;
-import org.springframework.batch.core.launch.NoSuchJobException;
-import org.springframework.batch.core.repository.dao.JobInstanceDao;
-import org.springframework.util.Assert;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.regex.Pattern;
 
-import static com.mongodb.BasicDBObjectBuilder.start;
+import org.bson.Document;
+import org.springframework.batch.core.DefaultJobKeyGenerator;
+import org.springframework.batch.core.JobExecution;
+import org.springframework.batch.core.JobInstance;
+import org.springframework.batch.core.JobKeyGenerator;
+import org.springframework.batch.core.JobParameters;
+import org.springframework.batch.core.launch.NoSuchJobException;
+import org.springframework.batch.core.repository.dao.JobInstanceDao;
+import org.springframework.util.Assert;
+
+import com.github.nmorel.spring.batch.mongodb.incrementer.ValueIncrementer;
+import com.mongodb.BasicDBObject;
+import com.mongodb.client.MongoCursor;
 
 
 /** {@link org.springframework.batch.core.repository.dao.JobInstanceDao} implementation for MongoDB */
@@ -67,11 +70,11 @@ public class MongoDbJobInstanceDao extends AbstractMongoDbDao implements JobInst
         JobInstance jobInstance = new JobInstance(jobId, jobName);
         jobInstance.incrementVersion();
 
-        getCollection().save(start()
-                .add(JOB_INSTANCE_ID_KEY, jobId)
-                .add(JOB_NAME_KEY, jobName)
-                .add(JOB_KEY_KEY, jobKeyGenerator.generateKey(jobParameters))
-                .add(VERSION_KEY, jobInstance.getVersion()).get());
+        getCollection().insertOne(start()
+                .append(JOB_INSTANCE_ID_KEY, jobId)
+                .append(JOB_NAME_KEY, jobName)
+                .append(JOB_KEY_KEY, jobKeyGenerator.generateKey(jobParameters))
+                .append(VERSION_KEY, jobInstance.getVersion()));
 
         return jobInstance;
     }
@@ -84,36 +87,37 @@ public class MongoDbJobInstanceDao extends AbstractMongoDbDao implements JobInst
 
         String jobKey = jobKeyGenerator.generateKey(jobParameters);
 
-        return mapJobInstance(getCollection().findOne(start()
-                .add(JOB_NAME_KEY, jobName)
-                .add(JOB_KEY_KEY, jobKey).get()));
+        return mapJobInstance(getCollection().find(start()
+                .append(JOB_NAME_KEY, jobName)
+                .append(JOB_KEY_KEY, jobKey)).first());
     }
 
     @Override
     public JobInstance getJobInstance( Long instanceId )
     {
-        return mapJobInstance(getCollection().findOne(new BasicDBObject(JOB_INSTANCE_ID_KEY, instanceId)));
+        return mapJobInstance(getCollection().find(new BasicDBObject(JOB_INSTANCE_ID_KEY, instanceId)).first());
     }
 
     @Override
     public JobInstance getJobInstance( JobExecution jobExecution )
     {
-        DBObject instanceId = getCollection(MongoDbJobExecutionDao.COLLECTION_NAME)
-                .findOne(new BasicDBObject(JOB_EXECUTION_ID_KEY, jobExecution.getId()), new BasicDBObject(JOB_INSTANCE_ID_KEY, 1L));
-        return mapJobInstance(getCollection().findOne(new BasicDBObject(JOB_INSTANCE_ID_KEY, instanceId.get(JOB_INSTANCE_ID_KEY))));
+        Document instanceId = getCollection(MongoDbJobExecutionDao.COLLECTION_NAME)
+                .find(new BasicDBObject(JOB_EXECUTION_ID_KEY, jobExecution.getId())).first();
+        return mapJobInstance(getCollection().find(new BasicDBObject(JOB_INSTANCE_ID_KEY, instanceId.get(JOB_INSTANCE_ID_KEY))).first());
     }
 
     @Override
     public List<JobInstance> getJobInstances( String jobName, int start, int count )
     {
         return mapJobInstances(getCollection().find(new BasicDBObject(JOB_NAME_KEY, jobName)).sort(new BasicDBObject(JOB_INSTANCE_ID_KEY, -1L))
-                .skip(start).limit(count));
+                .skip(start).limit(count).cursor());
     }
 
     @Override
     public List<String> getJobNames()
     {
-        List results = getCollection().distinct(JOB_NAME_KEY);
+        List<String> results = new ArrayList<String>(); 
+        		getCollection().distinct(JOB_NAME_KEY, String.class).forEach(job->results.add(job));
         Collections.sort(results);
         return results;
     }
@@ -122,16 +126,16 @@ public class MongoDbJobInstanceDao extends AbstractMongoDbDao implements JobInst
     public List<JobInstance> findJobInstancesByName(String jobName, int start, int count)
     {
         return mapJobInstances(getCollection().find(new BasicDBObject(JOB_NAME_KEY, Pattern.compile(jobName))).sort(new BasicDBObject(JOB_INSTANCE_ID_KEY, -1L))
-                .skip(start).limit(count));
+                .skip(start).limit(count).cursor());
     }
 
     @Override
     public int getJobInstanceCount(String jobName) throws NoSuchJobException
     {
-        return (int) getCollection().count(new BasicDBObject(JOB_NAME_KEY, jobName));
+        return (int) getCollection().countDocuments(new Document(JOB_NAME_KEY, jobName));
     }
 
-    private List<JobInstance> mapJobInstances( DBCursor dbCursor )
+    private List<JobInstance> mapJobInstances( MongoCursor<Document> dbCursor )
     {
         List<JobInstance> results = new ArrayList<JobInstance>();
         while( dbCursor.hasNext() )
@@ -142,7 +146,7 @@ public class MongoDbJobInstanceDao extends AbstractMongoDbDao implements JobInst
         return results;
     }
 
-    private JobInstance mapJobInstance( DBObject dbObject )
+    private JobInstance mapJobInstance( Document dbObject )
     {
         if( dbObject == null )
         {

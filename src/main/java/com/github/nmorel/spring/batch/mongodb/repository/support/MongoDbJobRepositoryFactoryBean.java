@@ -1,9 +1,5 @@
 package com.github.nmorel.spring.batch.mongodb.repository.support;
 
-import com.github.nmorel.spring.batch.mongodb.incrementer.MongoDbValueIncrementerFactory;
-import com.github.nmorel.spring.batch.mongodb.incrementer.ValueIncrementerFactory;
-import com.github.nmorel.spring.batch.mongodb.repository.dao.*;
-import com.mongodb.DB;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.batch.core.JobExecution;
@@ -11,12 +7,25 @@ import org.springframework.batch.core.JobInstance;
 import org.springframework.batch.core.StepExecution;
 import org.springframework.batch.core.repository.ExecutionContextSerializer;
 import org.springframework.batch.core.repository.JobRepository;
-import org.springframework.batch.core.repository.dao.*;
+import org.springframework.batch.core.repository.dao.ExecutionContextDao;
+import org.springframework.batch.core.repository.dao.Jackson2ExecutionContextStringSerializer;
+import org.springframework.batch.core.repository.dao.JobExecutionDao;
+import org.springframework.batch.core.repository.dao.JobInstanceDao;
+import org.springframework.batch.core.repository.dao.StepExecutionDao;
 import org.springframework.batch.core.repository.support.SimpleJobRepository;
 import org.springframework.beans.factory.FactoryBean;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.util.Assert;
 
+import com.github.nmorel.spring.batch.mongodb.incrementer.MongoDbValueIncrementerFactory;
+import com.github.nmorel.spring.batch.mongodb.incrementer.ValueIncrementerFactory;
+import com.github.nmorel.spring.batch.mongodb.repository.dao.AbstractMongoDbDao;
+import com.github.nmorel.spring.batch.mongodb.repository.dao.MongoDbExecutionContextDao;
+import com.github.nmorel.spring.batch.mongodb.repository.dao.MongoDbJobExecutionDao;
+import com.github.nmorel.spring.batch.mongodb.repository.dao.MongoDbJobInstanceDao;
+import com.github.nmorel.spring.batch.mongodb.repository.dao.MongoDbStepExecutionDao;
+import com.mongodb.client.MongoDatabase;
+ 
 /**
  * A {@link org.springframework.beans.factory.FactoryBean} that automates the creation of a
  * {@link org.springframework.batch.core.repository.support.SimpleJobRepository} with MongoDB dao.
@@ -26,7 +35,7 @@ public class MongoDbJobRepositoryFactoryBean implements FactoryBean, Initializin
 
     protected static final Log logger = LogFactory.getLog(MongoDbJobRepositoryFactoryBean.class);
 
-    private DB db;
+    private MongoDatabase db;
 
     private String collectionPrefix = AbstractMongoDbDao.DEFAULT_COLLECTION_PREFIX;
 
@@ -65,7 +74,7 @@ public class MongoDbJobRepositoryFactoryBean implements FactoryBean, Initializin
      *
      * @param db a {@link DB}
      */
-    public void setDb( DB db )
+    public void setDb( MongoDatabase db )
     {
         this.db = db;
     }
@@ -88,9 +97,7 @@ public class MongoDbJobRepositoryFactoryBean implements FactoryBean, Initializin
 
         if( serializer == null )
         {
-            XStreamExecutionContextStringSerializer defaultSerializer = new XStreamExecutionContextStringSerializer();
-            defaultSerializer.afterPropertiesSet();
-
+        	Jackson2ExecutionContextStringSerializer defaultSerializer = new Jackson2ExecutionContextStringSerializer();
             serializer = defaultSerializer;
         }
     }
